@@ -879,7 +879,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   updBtn();
 
   // jump chips (approximate park centers)
-  [["Leonard Park (Mt Kisco)",41.2007,-73.7346],["Ward Pound Ridge",41.257,-73.595],["Blue Mountain (Peekskill)",41.277,-73.905],["Rockefeller Preserve",41.107,-73.832],["Saxon Woods",40.99,-73.75],["Kensico Dam",41.07,-73.77]]
+  [["Leonard Park (Mt Kisco)",41.1935,-73.7230],["Ward Pound Ridge",41.257,-73.595],["Blue Mountain (Peekskill)",41.277,-73.905],["Rockefeller Preserve",41.107,-73.832],["Saxon Woods",40.99,-73.75],["Kensico Dam",41.07,-73.77]]
     .forEach(([n,la,lo])=>{ const b=document.createElement("button"); b.textContent=n; b.onclick=()=>{ map.setView([la,lo],14); collapse(); }; $("jump").appendChild(b); });
 
   // ---------- study square ----------
