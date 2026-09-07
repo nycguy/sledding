@@ -760,7 +760,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
   <section id="resultsSec" style="display:none">
     <h2><span class="step">2</span>Ranked courses <span style="font-weight:400;color:var(--ink-2);margin-left:6px" id="count"></span></h2>
-    <p class="hint" style="margin:0 0 6px">Ranked by score = top speed × length. <b style="color:#e0b52c">●</b> gold = 1–3, <b style="color:#2d6fb0">●</b> blue = 4–6, <b style="color:#6c7f92">●</b> gray = 7–10. The numbered circle is the start; the small dark dot is where the sled stops. Tap a course to zoom to it.</p>
     <p class="hint" style="margin:0 0 6px">Ranked by score = top speed × length. <b style="color:#e0b52c">Gold</b> = 1–3, <b style="color:#2d6fb0">blue</b> = 4–6, <b style="color:#6c7f92">gray</b> = 7–10. The numbered circle is the start; the small dark dot is where the sled stops. Tap a course to zoom to it.</p>
     <div id="list"></div>
     <div id="detail">
@@ -962,35 +961,49 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
       const slope=new Float32Array(N);
       for(let r=1;r<n-1;r++) for(let c=1;c<n-1;c++){ const i=r*n+c; const dzdx=(zs[i+1]-zs[i-1])/(2*cell), dzdy=(zs[i-n]-zs[i+n])/(2*cell); slope[i]=Math.atan(Math.hypot(dzdx,dzdy))*180/Math.PI; }
       status("Riding a sled down every slope…",.6); await tick();
-      const g=9.81, mu=0.05, kd=0.0036, dirs=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
-      const lowest=i=>{ const r=(i/n)|0,c=i%n; let best=-1,bz=zs[i]; for(const [dx,dy] of dirs){ const cc=c+dx,rr=r+dy; if(cc<0||cc>=n||rr<0||rr>=n) return -2; const j=rr*n+cc; if(zs[j]<bz){bz=zs[j];best=j;} } return best; };
+      const g=9.81, mu=0.05, kd=0.0036, latMax=0.3*g, dirs=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+      const gxA=new Float32Array(N), gyA=new Float32Array(N);
+      for(let r=1;r<n-1;r++) for(let c=1;c<n-1;c++){ const i=r*n+c; gxA[i]=(zs[i+1]-zs[i-1])/(2*cell); gyA[i]=(zs[i+n]-zs[i-n])/(2*cell); }
+      const at=(x,y)=>{ const c=Math.floor(x),r=Math.floor(y); if(c<1||r<1||c>=n-2||r>=n-2) return null; const fx=x-c,fy=y-r,i=r*n+c;
+        const bl=a=>(a[i]*(1-fx)+a[i+1]*fx)*(1-fy)+(a[i+n]*(1-fx)+a[i+n+1]*fx)*fy; const zv=bl(zs); if(isNaN(zv)) return null; return {z:zv,gx:bl(gxA),gy:bl(gyA),cell:i}; };
       const highest=i=>{ const r=(i/n)|0,c=i%n; let best=-1,bz=zs[i]; for(const [dx,dy] of dirs){ const cc=c+dx,rr=r+dy; if(cc<0||cc>=n||rr<0||rr>=n) continue; const j=rr*n+cc; if(zs[j]>bz&&!haz[j]){bz=zs[j];best=j;} } return best; };
+      // ride a sled: gravity along the slope, sliding friction, air drag, and a cap on how hard it can corner (0.3 g)
+      function ride(top){
+        let x=top%n+.5, y=((top/n)|0)+.5, vx=0, vy=0, len=0, t=0, vmax=0, ok=true, stopped=false, lastD=0; const dt=.08;
+        const g0=at(x,y); if(!g0) return null; const samp=[{x,y,z:g0.z,d:0,v:0}], cells=[g0.cell];
+        for(let st=0;st<3000;st++){
+          const gd=at(x,y); if(!gd){ok=false;break;} if(haz[gd.cell]){ok=false;break;}
+          const g2=gd.gx*gd.gx+gd.gy*gd.gy, cosT=1/Math.sqrt(1+g2), c2=cosT*cosT; let ax=-g*gd.gx*c2, ay=-g*gd.gy*c2; const sp=Math.hypot(vx,vy);
+          if(sp>0.05){ const fr=mu*g*cosT+kd*sp*sp; ax-=fr*vx/sp; ay-=fr*vy/sp; const ux=vx/sp,uy=vy/sp; const along=ax*ux+ay*uy; let lat=-ax*uy+ay*ux;
+            if(Math.abs(lat)>latMax) lat=Math.sign(lat)*latMax; ax=along*ux-lat*uy; ay=along*uy+lat*ux; }
+          else { const drive=Math.hypot(ax,ay); if(drive<=mu*g*cosT){ stopped=st>0; if(!stopped) ok=false; break; } const kk=(drive-mu*g*cosT)/drive; ax*=kk; ay*=kk; }
+          const nvx=vx+ax*dt, nvy=vy+ay*dt; if(sp>0.05&&(nvx*vx+nvy*vy)<0&&sp<1){stopped=true;break;}
+          vx=nvx; vy=nvy; const dx=vx*dt, dy=vy*dt; x+=dx/cell; y+=dy/cell; len+=Math.hypot(dx,dy); const v=Math.hypot(vx,vy); vmax=Math.max(vmax,v); t+=dt;
+          if(gd.cell!==cells[cells.length-1]) cells.push(gd.cell);
+          if(len-lastD>=2){ const q=at(x,y); if(q){ samp.push({x,y,z:q.z,d:len,v}); lastD=len; } }
+          if(t>150){ok=false;break;}
+        }
+        if(!ok||!stopped) return null;
+        const q=at(x,y); if(q) samp.push({x,y,z:q.z,d:len,v:0});
+        let maxPitch=0; for(let k=3;k<samp.length;k++){ const dd=samp[k].d-samp[k-3].d; if(dd>0){ const pp=Math.atan2(samp[k-3].z-samp[k].z,dd)*180/Math.PI; if(pp>maxPitch) maxPitch=pp; } }
+        let minR=Infinity; for(let k=4;k<samp.length;k++){ if(samp[k-2].v<3) continue; const a1=Math.atan2(samp[k-2].y-samp[k-4].y,samp[k-2].x-samp[k-4].x), a2=Math.atan2(samp[k].y-samp[k-2].y,samp[k].x-samp[k-2].x);
+          let da=Math.abs(a2-a1); if(da>Math.PI) da=2*Math.PI-da; const ds=samp[k].d-samp[k-2].d; if(da>1e-3&&ds>0){ const R=ds/da; if(R<minR) minR=R; } }
+        return {samp,cells,top,end:cells[cells.length-1],lenFt:len*FT,dropFt:(samp[0].z-samp[samp.length-1].z)*FT,vmax:vmax*2.23694,maxPitch,minR:minR*FT,secs:t};
+      }
       const seen=new Set(), found=[];
       for(let r=2;r<n-2;r+=3) for(let c=2;c<n-2;c+=3){
         const i=r*n+c; if(haz[i]||slope[i]<minS) continue;
         let top=i, st=0; while(st++<300){ const j=highest(top); if(j<0||slope[j]<minS*0.5) break; top=j; }
         if(seen.has(top)||haz[top]) continue; seen.add(top);
-        const path=[top], dist=[0]; let cur=top, v2=0, vmax=0, ok=true, stopped=false, maxPitch=0, len=0;
-        for(let s=0;s<700;s++){
-          const j=lowest(cur); if(j===-2){ok=false;break;} if(j===-1){stopped=true;break;} if(haz[j]){ok=false;break;}
-          const dr=Math.abs(((j/n)|0)-((cur/n)|0)), dc=Math.abs(j%n-cur%n), ds=cell*(dr&&dc?Math.SQRT2:1), dz=zs[cur]-zs[j], th=Math.atan2(dz,ds);
-          if(path.length>=3){ const a=path[path.length-3]; const p3=Math.atan2(zs[a]-zs[j],len-dist[path.length-3]+ds)*180/Math.PI; if(p3>maxPitch) maxPitch=p3; }
-          v2+=2*ds*(g*(Math.sin(th)-mu*Math.cos(th))-kd*v2);
-          if(v2<=0){stopped=true;break;}
-          vmax=Math.max(vmax,Math.sqrt(v2)); len+=ds; path.push(j); dist.push(len); cur=j;
-        }
-        if(!ok||!stopped||maxPitch>maxS) continue;
-        const lenFt=len*FT, dropFt=(zs[top]-zs[cur])*FT;
-        if(lenFt<minLenFt||dropFt<12) continue;
-        found.push({path,dist,top,end:cur,lenFt,dropFt,vmax:vmax*2.23694,maxPitch,avg:Math.atan2(dropFt,lenFt)*180/Math.PI,open:!!openM[top]});
+        const f=ride(top); if(!f||f.maxPitch>maxS||f.lenFt<minLenFt||f.dropFt<12) continue;
+        f.avg=Math.atan2(f.dropFt,f.lenFt)*180/Math.PI; f.open=!!openM[top]; found.push(f);
       }
       found.forEach(f=>f.score=f.vmax*f.lenFt/1000); found.sort((a,b)=>b.score-a.score);
       const occ=new Uint8Array(N), keep=[];
-      for(const f of found){ let hit=0; f.path.forEach(i=>{ if(occ[i]) hit++; }); if(hit>f.path.length*0.25) continue; keep.push(f);
-        const m=new Uint8Array(N); f.path.forEach(i=>m[i]=1); const d=dilate(m,n,R(12)); for(let i=0;i<N;i++) if(d[i]) occ[i]=1; if(keep.length>=10) break; }
+      for(const f of found){ let hit=0; f.cells.forEach(i=>{ if(occ[i]) hit++; }); if(hit>f.cells.length*0.25) continue; keep.push(f);
+        const m=new Uint8Array(N); f.cells.forEach(i=>m[i]=1); const d=dilate(m,n,R(12)); for(let i=0;i<N;i++) if(d[i]) occ[i]=1; if(keep.length>=10) break; }
       status("Drawing…",.9); await tick();
-      const toLL=i=>unproj(e.xmin+(i%n+.5)*cs, e.ymax-(((i/n)|0)+.5)*cs);
-      keep.forEach((f,idx)=>{ f.rank=idx+1; f.ll=f.path.map(toLL); f.profile=f.path.map((i,s)=>({d:f.dist[s]*FT,z:zs[i]*FT})); });
+      keep.forEach((f,idx)=>{ f.rank=idx+1; f.ll=f.samp.map(p=>unproj(e.xmin+p.x*cs, e.ymax-p.y*cs)); f.profile=f.samp.map(p=>({d:p.d*FT,z:p.z*FT})); });
       courses=keep; makeShading(zs,slope,haz,n,e,cell); render();
       status(keep.length?`Done. ${found.length} runs traced, ${keep.length} distinct courses kept.`:"No qualifying course in this square. Try a hillier spot, a bigger square, or loosen the rules.",1);
       if(!keep.length) expand();
@@ -1061,8 +1074,9 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
     mini.onclick=()=>{ expand(); setTimeout(()=>$("detail").scrollIntoView({block:"start",behavior:"smooth"}),250); };
     $("detail").style.display="block";
     $("stats").innerHTML=[["Top speed",f.vmax.toFixed(0)+" mph"],["Length",f.lenFt.toFixed(0)+" ft"],["Drop",f.dropFt.toFixed(0)+" ft"],
-      ["Average grade",f.avg.toFixed(1)+"°"],["Steepest pitch",f.maxPitch.toFixed(0)+"°"],["Score",f.score.toFixed(1)]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("");
-    const notes=[`The sled stops on its own at the dark dot. The whole line stays ${$("roadBuf").value} ft or more from roadways and clear of driveways, parking, buildings and water.`];
+      ["Average grade",f.avg.toFixed(1)+"°"],["Steepest pitch",f.maxPitch.toFixed(0)+"°"],["Score",f.score.toFixed(1)],
+      ["Ride time",f.secs.toFixed(0)+" s"],["Tightest turn",isFinite(f.minR)?f.minR.toFixed(0)+" ft radius":"straight"],["Average speed",(f.lenFt/f.secs*0.6818).toFixed(0)+" mph"]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("");
+    const notes=[`The line is a simulated sled with inertia: it can corner no harder than 0.3 g, so turns are as gentle as the speed demands. It stops on its own at the dark dot. The whole line stays ${$("roadBuf").value} ft or more from roadways and clear of driveways, parking, buildings and water.`];
     notes.push(f.open?"Top sits on county-mapped open space. Public land — tree clearing will not be allowed.":"Top is not on county-mapped open space, so this is probably a private parcel. Turn on Tax parcels to see lot lines, then check the owner with the town assessor.");
     if(f.maxPitch>22) notes.push("Steepest pitch is expert-level; a sled will leave the ground on bumps.");
     $("notes").innerHTML=notes.map(t=>`<li>${t}</li>`).join("");
