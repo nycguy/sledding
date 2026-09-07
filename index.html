@@ -738,8 +738,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <div id="mini" style="display:none"></div>
 <div id="mini" style="display:none"></div>
 <aside id="panel" class="collapsed">
+  <div id="sheetbar"><div class="grab"></div><button id="mapBtn">Map ▾</button></div>
   <header id="hdr">
-    <div class="grab"></div>
     <h1>Westchester Sledding Course Finder</h1>
     <p>Center the map on a hill, press Find. The app reads LiDAR terrain, avoids roads, driveways, buildings and water, rides a sled down every line, and ranks courses by speed and length.</p>
   </header>
@@ -855,8 +855,14 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
 
   // panel behavior
   const panel=$("panel");
-  $("hdr").onclick=()=>panel.classList.toggle("collapsed");
-  const expand=()=>panel.classList.remove("collapsed"), collapse=()=>{ if(innerWidth<900) panel.classList.add("collapsed"); };
+  $("hdr").onclick=()=>{ panel.classList.contains("collapsed")?expand():collapse(); };
+  const updBtn=()=>$("mapBtn").textContent=panel.classList.contains("collapsed")?"Panel ▴":"Map ▾";
+  const expand=()=>{ panel.classList.remove("collapsed"); updBtn(); }, collapse=()=>{ if(innerWidth<900){ panel.classList.add("collapsed"); panel.scrollTop=0; } updBtn(); };
+  $("mapBtn").onclick=e=>{ e.stopPropagation(); panel.classList.contains("collapsed")?expand():collapse(); };
+  map.on("click",()=>collapse());
+  let ty=null; $("sheetbar").addEventListener("touchstart",e=>ty=e.touches[0].clientY,{passive:true});
+  $("sheetbar").addEventListener("touchend",e=>{ if(ty==null) return; const dy=e.changedTouches[0].clientY-ty; ty=null; if(dy>40) collapse(); else if(dy<-40) expand(); });
+  updBtn();
 
   // jump chips (approximate park centers)
   [["Leonard Park (Mt Kisco)",41.2007,-73.7346],["Ward Pound Ridge",41.257,-73.595],["Blue Mountain (Peekskill)",41.277,-73.905],["Rockefeller Preserve",41.107,-73.832],["Saxon Woods",40.99,-73.75],["Kensico Dam",41.07,-73.77]]
