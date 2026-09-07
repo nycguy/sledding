@@ -799,7 +799,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <label class="check"><input type="checkbox" id="lyPlan" checked> Buildings, roadways, driveways, lakes</label>
     <label class="check"><input type="checkbox" id="lyOpen"> Open space and parks</label>
     <label class="check"><input type="checkbox" id="lyCont5"> 5-ft contours from LiDAR (after Find)</label>
-    <label class="check"><input type="checkbox" id="lyContours"> County 2-ft contours (on after Find; zoom in)</label>
+    <label class="check"><input type="checkbox" id="lyContours" checked> County 2-ft contours (index lines when zoomed out)</label>
     <label class="check"><input type="checkbox" id="lySlope" checked> Slope shading (after Find)</label>
     <label class="check"><input type="checkbox" id="lyImagery" checked> Aerial imagery basemap</label>
   </section>
@@ -837,14 +837,15 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   imagery.addTo(map); places.addTo(map);
 
   // dynamic export overlay (county MapServer drawn as an image for the current view)
-  function exportOverlay(service, params, opacity, minZoom){
+  function exportOverlay(service, params, opacity, minZoom, maxZoom){
     const grp=L.layerGroup(); let cur=null, tok=0;
     grp.setOpacity=v=>{ opacity=v; if(cur) cur.setOpacity(v); };
     function refresh(){
       if(!map.hasLayer(grp)) return;
-      if(minZoom&&map.getZoom()<minZoom){ if(cur){grp.removeLayer(cur);cur=null;} return; }
+      const zz=map.getZoom();
+      if((minZoom&&zz<minZoom)||(maxZoom&&zz>maxZoom)){ if(cur){grp.removeLayer(cur);cur=null;} return; }
       const b=map.getBounds(), sz=map.getSize(), sw=proj(b.getSouthWest()), ne=proj(b.getNorthEast()), my=++tok;
-      const url=service+"/export?"+new URLSearchParams(Object.assign({bbox:`${sw.x},${sw.y},${ne.x},${ne.y}`,bboxSR:"3857",imageSR:"3857",size:`${sz.x},${sz.y}`,transparent:"true",format:"png32",f:"image"},params));
+      const url=service+"/export?"+new URLSearchParams(Object.assign({bbox:`${sw.x},${sw.y},${ne.x},${ne.y}`,bboxSR:"3857",imageSR:"3857",size:`${sz.x},${sz.y}`,transparent:"true",format:"png32",f:"image"},typeof params==="function"?params(map.getZoom()):params));
       const ov=L.imageOverlay(url,b,{opacity});
       ov.on("load",()=>{ if(my!==tok){grp.removeLayer(ov);return;} if(cur) grp.removeLayer(cur); cur=ov; });
       ov.on("error",()=>grp.removeLayer(ov));
@@ -858,10 +859,18 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   const parcels=exportOverlay(WC+"/DataHub_TaxParcels/MapServer",{},0.75,15);
   const openLayer=exportOverlay(ENV,{layers:"show:209"},0.45,11);
   const contours=L.tileLayer(WC+"/2FtContours_WGS84/MapServer/tile/{z}/{y}/{x}",{minZoom:17,minNativeZoom:18,maxNativeZoom:23,maxZoom:21,zoomOffset:-18,opacity:.85,attribution:"Westchester County GIS"});
-  planLayer.addTo(map);
+  // County 2-ft contours at wider scales: the layer is capped at 1:1,500 by the county, so draw it as a dynamic layer with the cap lifted.
+  // Zoom 13-15 shows the dataset's own index contours only; zoom 16 shows every 2-ft line; tiles take over at 17+.
+  const contDyn=z=>{ const dl={id:801,source:{type:"mapLayer",mapLayerId:0},minScale:0,maxScale:0,
+      drawingInfo:{renderer:{type:"simple",symbol:{type:"esriSLS",style:"esriSLSSolid",color:[150,95,40,255],width:z<=15?1.1:0.8}},showLabels:false}};
+    if(z<=15) dl.definitionExpression="TOPO_2FT_CODE IN (3100,3110,3120)";
+    return {dynamicLayers:JSON.stringify([dl])}; };
+  const contoursWide=exportOverlay(WC+"/2FtContours_WGS84/MapServer",contDyn,0.85,13,16);
+  const contoursAll=L.layerGroup([contoursWide,contours]);
+  planLayer.addTo(map); contoursAll.addTo(map);
   let slopeOv=null, contOv=null;
   const bind=(id,layer)=>$(id).onchange=e=>e.target.checked?layer.addTo(map):map.removeLayer(layer);
-  bind("lyPlan",planLayer); bind("lyParcels",parcels); bind("lyOpen",openLayer); bind("lyContours",contours);
+  bind("lyPlan",planLayer); bind("lyParcels",parcels); bind("lyOpen",openLayer); bind("lyContours",contoursAll);
   // County contours come on automatically after Find unless the user has turned them off by hand this session.
   let contoursUser=false; $("lyContours").addEventListener("change",()=>{contoursUser=true;});
   $("lySlope").onchange=e=>{ if(slopeOv) e.target.checked?slopeOv.addTo(map):map.removeLayer(slopeOv); };
@@ -1036,7 +1045,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
     slopeOv=mk(d=>{ for(let i=0;i<n*n;i++){ const s=slope[i], p=i*4; if(isNaN(zs[i])||s<minS){d[p+3]=0;continue;} const col=s<16?[47,143,78]:s<=maxS?[217,154,18]:[138,26,26]; d[p]=col[0];d[p+1]=col[1];d[p+2]=col[2];d[p+3]=200; } });
     contOv=makeContours(zs,n,e);
     if($("lySlope").checked) slopeOv.addTo(map); if($("lyCont5").checked) contOv.addTo(map);
-    if(!contoursUser && !$("lyContours").checked){ $("lyContours").checked=true; contours.addTo(map); }
+    if(!contoursUser && !$("lyContours").checked){ $("lyContours").checked=true; contoursAll.addTo(map); }
   }
   function makeContours(zs,n,e){
     const S=3, c=document.createElement("canvas"); c.width=n*S; c.height=n*S; const x=c.getContext("2d");
