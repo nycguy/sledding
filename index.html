@@ -723,11 +723,20 @@ svg.leaflet-image-layer.leaflet-interactive path {
   footer{padding:12px 16px;font-size:11.5px;color:var(--ink-2);line-height:1.45}
   .lab{width:26px;height:26px;border-radius:50%;color:#fff;font-weight:700;font-size:13px;text-align:center;line-height:26px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
   .leaflet-control-attribution{font-size:9px}
+  #mini{position:fixed;top:10px;left:58px;right:10px;z-index:1001;background:#fff;border-radius:8px;padding:8px 12px;box-shadow:0 2px 10px rgba(0,0,0,.3);font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer}
+  #mini b{font-size:14px} #mini .more{color:var(--sky-dark);font-weight:600;white-space:nowrap}
+  @media (min-width:900px){ #mini{left:auto;right:14px;width:320px} }
+  #mini{position:fixed;top:10px;left:58px;right:10px;z-index:1001;background:#fff;border-radius:8px;padding:8px 12px;box-shadow:0 2px 10px rgba(0,0,0,.3);font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}
+  #mini b{font-weight:600} #mini .dot{width:22px;height:22px;border-radius:50%;color:#fff;font-weight:700;text-align:center;line-height:22px;font-size:12px;flex:none}
+  #mini .more{color:var(--sky-dark);font-weight:600;white-space:nowrap}
+  @media (min-width:900px){ #mini{left:410px;right:auto;min-width:320px} }
 </style>
 </head>
 <body>
 <div id="errbar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:2000;background:#b3261e;color:#fff;font:13px/1.4 -apple-system,sans-serif;padding:10px 14px;white-space:pre-wrap"></div>
 <div id="map"></div>
+<div id="mini" style="display:none"></div>
+<div id="mini" style="display:none"></div>
 <aside id="panel" class="collapsed">
   <header id="hdr">
     <div class="grab"></div>
@@ -751,6 +760,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
   <section id="resultsSec" style="display:none">
     <h2><span class="step">2</span>Ranked courses <span style="font-weight:400;color:var(--ink-2);margin-left:6px" id="count"></span></h2>
+    <p class="hint" style="margin:0 0 6px">Ranked by score = top speed × length. <b style="color:#e0b52c">●</b> gold = 1–3, <b style="color:#2d6fb0">●</b> blue = 4–6, <b style="color:#6c7f92">●</b> gray = 7–10. The numbered circle is the start; the small dark dot is where the sled stops. Tap a course to zoom to it.</p>
+    <p class="hint" style="margin:0 0 6px">Ranked by score = top speed × length. <b style="color:#e0b52c">Gold</b> = 1–3, <b style="color:#2d6fb0">blue</b> = 4–6, <b style="color:#6c7f92">gray</b> = 7–10. The numbered circle is the start; the small dark dot is where the sled stops. Tap a course to zoom to it.</p>
     <div id="list"></div>
     <div id="detail">
       <canvas id="profile"></canvas>
@@ -773,9 +784,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <label class="check"><input type="checkbox" id="lyParcels"> Tax parcels</label>
     <label class="check"><input type="checkbox" id="lyPlan" checked> Buildings, roadways, driveways, lakes</label>
     <label class="check"><input type="checkbox" id="lyOpen" checked> Open space and parks</label>
-    <label class="check"><input type="checkbox" id="lyContours"> 2-ft contours (zoom in)</label>
+    <label class="check"><input type="checkbox" id="lyCont5" checked> 5-ft contours from LiDAR (after Find)</label>
+    <label class="check"><input type="checkbox" id="lyContours"> County 2-ft contours (zoom in, slow)</label>
     <label class="check"><input type="checkbox" id="lySlope"> Slope shading (after Find)</label>
-    <label class="check"><input type="checkbox" id="lyHill"> LiDAR hillshade (after Find)</label>
+    <label class="check"><input type="checkbox" id="lyHill" checked> LiDAR hillshade (after Find)</label>
     <label class="check"><input type="checkbox" id="lyImagery" checked> Aerial imagery basemap</label>
   </section>
 
@@ -804,10 +816,10 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   const crs=L.CRS.EPSG3857, proj=ll=>crs.project(L.latLng(ll)), unproj=(x,y)=>crs.unproject(L.point(x,y));
 
   // ---------- map & basemaps ----------
-  const map=L.map("map",{zoomControl:true,attributionControl:true}).setView([41.12,-73.76],13);
-  const imagery=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Esri, Maxar"});
-  const places=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",{maxZoom:19});
-  const topo=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Esri"});
+  const map=L.map("map",{zoomControl:true,attributionControl:true,maxZoom:21}).setView([41.12,-73.76],13);
+  const imagery=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:21,maxNativeZoom:19,attribution:"Esri, Maxar"});
+  const places=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",{maxZoom:21,maxNativeZoom:19});
+  const topo=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:21,maxNativeZoom:19,attribution:"Esri"});
   imagery.addTo(map); places.addTo(map);
 
   // dynamic export overlay (county MapServer drawn as an image for the current view)
@@ -830,13 +842,14 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   const planLayer=exportOverlay(PLAN,{layers:"show:0,5,7,9,10,11"},0.8,14);
   const parcels=exportOverlay(WC+"/DataHub_TaxParcels/MapServer",{},0.75,15);
   const openLayer=exportOverlay(ENV,{layers:"show:209"},0.45,11);
-  const contours=exportOverlay(WC+"/2FtContours_WGS84/MapServer",{},0.7,16);
-  planLayer.addTo(map); openLayer.addTo(map);
-  let slopeOv=null, hillOv=null;
+  const contours=L.tileLayer(WC+"/2FtContours_WGS84/MapServer/tile/{z}/{y}/{x}",{minZoom:17,minNativeZoom:18,maxNativeZoom:23,maxZoom:21,zoomOffset:-18,opacity:.85,attribution:"Westchester County GIS"});
+  planLayer.addTo(map); openLayer.addTo(map); contours.addTo(map);
+  let slopeOv=null, hillOv=null, contOv=null;
   const bind=(id,layer)=>$(id).onchange=e=>e.target.checked?layer.addTo(map):map.removeLayer(layer);
   bind("lyPlan",planLayer); bind("lyParcels",parcels); bind("lyOpen",openLayer); bind("lyContours",contours);
   $("lySlope").onchange=e=>{ if(slopeOv) e.target.checked?slopeOv.addTo(map):map.removeLayer(slopeOv); };
   $("lyHill").onchange=e=>{ if(hillOv) e.target.checked?hillOv.addTo(map):map.removeLayer(hillOv); };
+  $("lyCont5").onchange=e=>{ if(contOv) e.target.checked?contOv.addTo(map):map.removeLayer(contOv); };
   $("lyImagery").onchange=e=>{ if(e.target.checked){map.removeLayer(topo);imagery.addTo(map);places.addTo(map);} else {map.removeLayer(imagery);map.removeLayer(places);topo.addTo(map);} };
   [["minS","°"],["maxS","°"],["roadBuf"," ft"],["minLen"," ft"]].forEach(([id,u])=>$(id).oninput=()=>$(id+"v").textContent=$(id).value+u);
 
@@ -921,7 +934,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
 
   $("runBtn").onclick=async()=>{
     if(analyzing) return; analyzing=true; $("runBtn").disabled=true; layerGroup.clearLayers(); courses=[]; $("resultsSec").style.display="none"; $("detail").style.display="none";
-    if(slopeOv){map.removeLayer(slopeOv);slopeOv=null;} if(hillOv){map.removeLayer(hillOv);hillOv=null;}
+    if(slopeOv){map.removeLayer(slopeOv);slopeOv=null;} if(hillOv){map.removeLayer(hillOv);hillOv=null;} if(contOv){map.removeLayer(contOv);contOv=null;} $("mini").style.display="none";
     const minS=+$("minS").value, maxS=+$("maxS").value, roadBufFt=+$("roadBuf").value, minLenFt=+$("minLen").value;
     try{
       const e=areaBox(); square.setBounds(boxBounds(e)); collapse();
@@ -988,7 +1001,29 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
     hillOv=mk(d=>{ for(let r=1;r<n-1;r++) for(let c=1;c<n-1;c++){ const i=r*n+c,p=i*4; if(isNaN(zs[i])){d[p+3]=0;continue;}
       const dzdx=(zs[i+1]-zs[i-1])/(2*cell), dzdy=(zs[i+n]-zs[i-n])/(2*cell), sl=Math.atan(Math.hypot(dzdx,dzdy)), asp=Math.atan2(dzdy,-dzdx);
       let h=255*(Math.cos(Math.PI/2-alt)*Math.cos(sl)+Math.sin(Math.PI/2-alt)*Math.sin(sl)*Math.cos(az-asp)); h=Math.max(0,Math.min(255,h)); d[p]=d[p+1]=d[p+2]=h; d[p+3]=255; } });
-    if($("lySlope").checked) slopeOv.addTo(map); if($("lyHill").checked) hillOv.addTo(map);
+    hillOv.setOpacity(.45);
+    contOv=makeContours(zs,n,e);
+    if($("lySlope").checked) slopeOv.addTo(map); if($("lyHill").checked) hillOv.addTo(map); if($("lyCont5").checked) contOv.addTo(map);
+  }
+  function makeContours(zs,n,e){
+    const S=3, c=document.createElement("canvas"); c.width=n*S; c.height=n*S; const x=c.getContext("2d");
+    const step=5/FT, index=25/FT; let zmin=Infinity,zmax=-Infinity; for(let i=0;i<n*n;i++){ const v=zs[i]; if(isNaN(v)) continue; if(v<zmin)zmin=v; if(v>zmax)zmax=v; }
+    const pass=(minor,color,width)=>{ x.strokeStyle=color; x.lineWidth=width; x.beginPath();
+      for(let r=0;r<n-1;r++) for(let cc=0;cc<n-1;cc++){
+        const i=r*n+cc, a=zs[i],b=zs[i+1],d=zs[i+n],g=zs[i+n+1]; if(isNaN(a)||isNaN(b)||isNaN(d)||isNaN(g)) continue;
+        const lo=Math.min(a,b,d,g), hi=Math.max(a,b,d,g); let L0=Math.ceil(lo/step)*step;
+        for(let lv=L0; lv<=hi; lv+=step){
+          const isIndex=Math.abs(lv/index-Math.round(lv/index))<1e-6; if(minor===isIndex) continue;
+          const pts=[]; const X0=(cc+.5)*S, Y0=(r+.5)*S;
+          if((a<lv)!==(b<lv)) pts.push([X0+S*(lv-a)/(b-a), Y0]);
+          if((b<lv)!==(g<lv)) pts.push([X0+S, Y0+S*(lv-b)/(g-b)]);
+          if((d<lv)!==(g<lv)) pts.push([X0+S*(lv-d)/(g-d), Y0+S]);
+          if((a<lv)!==(d<lv)) pts.push([X0, Y0+S*(lv-a)/(d-a)]);
+          if(pts.length>=2){ x.moveTo(pts[0][0],pts[0][1]); x.lineTo(pts[1][0],pts[1][1]); if(pts.length===4){ x.moveTo(pts[2][0],pts[2][1]); x.lineTo(pts[3][0],pts[3][1]); } }
+        } }
+      x.stroke(); };
+    pass(true,"rgba(255,255,255,0.55)",1.0); pass(false,"rgba(255,255,255,0.9)",1.6); pass(true,"rgba(120,70,20,0.55)",0.6); pass(false,"rgba(120,70,20,0.95)",1.1);
+    return L.imageOverlay(c.toDataURL(),boxBounds(e),{opacity:.9});
   }
 
   // ---------- results ----------
@@ -1009,17 +1044,25 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
     if(courses.length){ map.fitBounds(L.featureGroup(courses.map(f=>f.line)).getBounds().pad(.15)); expand(); setTimeout(()=>$("resultsSec").scrollIntoView({block:"start",behavior:"smooth"}),300); }
   }
   function select(rank){
-    const f=courses.find(c=>c.rank===rank); if(!f) return; expand();
+    const f=courses.find(c=>c.rank===rank); if(!f) return;
     $("list").querySelectorAll(".course").forEach(el=>el.classList.toggle("sel",+el.dataset.r===rank));
-    courses.forEach(c=>c.line.setStyle({weight:c.rank===rank?7:4})); f.outline.bringToFront(); f.line.bringToFront();
-    map.fitBounds(f.line.getBounds().pad(.6));
+    courses.forEach(c=>{ c.line.setStyle({weight:c.rank===rank?7:4,color:rankColor(c.rank)}); c.outline.setStyle({weight:c.rank===rank?11:7,color:c.rank===rank?"#ffffff":"#1b2a38"}); });
+    f.outline.bringToFront(); f.line.bringToFront();
+    const phone=innerWidth<900; if(phone) panel.classList.add("collapsed");
+    map.fitBounds(f.line.getBounds(),{paddingTopLeft:[phone?10:400,70],paddingBottomRight:[10,phone?280:20],maxZoom:19});
+    const mini=$("mini"); mini.style.display="flex";
+    mini.innerHTML=`<div><b>Course ${f.rank}</b> · ${f.vmax.toFixed(0)} mph · ${f.lenFt.toFixed(0)} ft · ${f.dropFt.toFixed(0)} ft drop</div><div class="more">Details ▸</div>`;
+    mini.onclick=()=>{ expand(); setTimeout(()=>$("detail").scrollIntoView({block:"start",behavior:"smooth"}),250); };
     $("detail").style.display="block";
     $("stats").innerHTML=[["Top speed",f.vmax.toFixed(0)+" mph"],["Length",f.lenFt.toFixed(0)+" ft"],["Drop",f.dropFt.toFixed(0)+" ft"],
       ["Average grade",f.avg.toFixed(1)+"°"],["Steepest pitch",f.maxPitch.toFixed(0)+"°"],["Score",f.score.toFixed(1)]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("");
-    const notes=[`The sled stops on its own at the dot. The whole line stays ${$("roadBuf").value} ft or more from roadways and clear of driveways, parking, buildings and water.`];
+    const notes=[`The sled stops on its own at the dark dot. The whole line stays ${$("roadBuf").value} ft or more from roadways and clear of driveways, parking, buildings and water.`];
     notes.push(f.open?"Top sits on county-mapped open space. Public land — tree clearing will not be allowed.":"Top is not on county-mapped open space, so this is probably a private parcel. Turn on Tax parcels to see lot lines, then check the owner with the town assessor.");
     if(f.maxPitch>22) notes.push("Steepest pitch is expert-level; a sled will leave the ground on bumps.");
     $("notes").innerHTML=notes.map(t=>`<li>${t}</li>`).join("");
+    const m=$("mini"); m.style.display="flex";
+    m.innerHTML=`<div class="dot" style="background:${rankColor(f.rank)}">${f.rank}</div><div><b>Course ${f.rank}</b> · ${f.vmax.toFixed(0)} mph · ${f.lenFt.toFixed(0)} ft · ${f.dropFt.toFixed(0)} ft drop</div><div class="more">Details ›</div>`;
+    m.onclick=()=>{ expand(); drawProfile(f); setTimeout(()=>$("detail").scrollIntoView({block:"start",behavior:"smooth"}),250); };
     drawProfile(f);
   }
   function drawProfile(f){
