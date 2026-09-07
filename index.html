@@ -800,6 +800,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   const ENV=WC+"/DataHub_EnvironmentandPlanning/MapServer";
   const DEP="https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer";
   const FT=3.28084;
+  let analyzing=false;
   const crs=L.CRS.EPSG3857, proj=ll=>crs.project(L.latLng(ll)), unproj=(x,y)=>crs.unproject(L.point(x,y));
 
   // ---------- map & basemaps ----------
@@ -913,7 +914,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   }
 
   // ---------- analysis ----------
-  let analyzing=false, courses=[], layerGroup=L.layerGroup().addTo(map);
+  let courses=[], layerGroup=L.layerGroup().addTo(map);
   const status=(m,p)=>{ $("status").textContent=m; if(p!=null) $("bar").firstElementChild.style.width=(p*100)+"%"; };
   const tick=()=>new Promise(r=>setTimeout(r,15));
 
