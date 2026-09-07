@@ -797,11 +797,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <h2>Layers</h2>
     <label class="check"><input type="checkbox" id="lyParcels"> Tax parcels</label>
     <label class="check"><input type="checkbox" id="lyPlan" checked> Buildings, roadways, driveways, lakes</label>
-    <label class="check"><input type="checkbox" id="lyOpen" checked> Open space and parks</label>
-    <label class="check"><input type="checkbox" id="lyCont5" checked> 5-ft contours from LiDAR (after Find)</label>
-    <label class="check"><input type="checkbox" id="lyContours"> County 2-ft contours (zoom in, slow)</label>
-    <label class="check"><input type="checkbox" id="lySlope"> Slope shading (after Find)</label>
-    <label class="check"><input type="checkbox" id="lyHill" checked> LiDAR hillshade (after Find)</label>
+    <label class="check"><input type="checkbox" id="lyOpen"> Open space and parks</label>
+    <label class="check"><input type="checkbox" id="lyCont5"> 5-ft contours from LiDAR (after Find)</label>
+    <label class="check"><input type="checkbox" id="lyContours"> County 2-ft contours (on after Find; zoom in)</label>
+    <label class="check"><input type="checkbox" id="lySlope" checked> Slope shading (after Find)</label>
     <label class="check"><input type="checkbox" id="lyImagery" checked> Aerial imagery basemap</label>
   </section>
 
@@ -859,12 +858,13 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   const parcels=exportOverlay(WC+"/DataHub_TaxParcels/MapServer",{},0.75,15);
   const openLayer=exportOverlay(ENV,{layers:"show:209"},0.45,11);
   const contours=L.tileLayer(WC+"/2FtContours_WGS84/MapServer/tile/{z}/{y}/{x}",{minZoom:17,minNativeZoom:18,maxNativeZoom:23,maxZoom:21,zoomOffset:-18,opacity:.85,attribution:"Westchester County GIS"});
-  planLayer.addTo(map); openLayer.addTo(map); contours.addTo(map);
-  let slopeOv=null, hillOv=null, contOv=null;
+  planLayer.addTo(map);
+  let slopeOv=null, contOv=null;
   const bind=(id,layer)=>$(id).onchange=e=>e.target.checked?layer.addTo(map):map.removeLayer(layer);
   bind("lyPlan",planLayer); bind("lyParcels",parcels); bind("lyOpen",openLayer); bind("lyContours",contours);
+  // County contours come on automatically after Find unless the user has turned them off by hand this session.
+  let contoursUser=false; $("lyContours").addEventListener("change",()=>{contoursUser=true;});
   $("lySlope").onchange=e=>{ if(slopeOv) e.target.checked?slopeOv.addTo(map):map.removeLayer(slopeOv); };
-  $("lyHill").onchange=e=>{ if(hillOv) e.target.checked?hillOv.addTo(map):map.removeLayer(hillOv); };
   $("lyCont5").onchange=e=>{ if(contOv) e.target.checked?contOv.addTo(map):map.removeLayer(contOv); };
   $("lyImagery").onchange=e=>{ if(e.target.checked){map.removeLayer(topo);imagery.addTo(map);places.addTo(map);} else {map.removeLayer(imagery);map.removeLayer(places);topo.addTo(map);} };
   [["minS","°"],["maxS","°"],["roadBuf"," ft"],["minLen"," ft"]].forEach(([id,u])=>$(id).oninput=()=>$(id+"v").textContent=$(id).value+u);
@@ -956,7 +956,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
 
   $("runBtn").onclick=async()=>{
     if(analyzing) return; analyzing=true; $("runBtn").disabled=true; layerGroup.clearLayers(); courses=[]; openLayer.setOpacity(0.45); $("resultsSec").style.display="none"; $("detail").style.display="none";
-    if(slopeOv){map.removeLayer(slopeOv);slopeOv=null;} if(hillOv){map.removeLayer(hillOv);hillOv=null;} if(contOv){map.removeLayer(contOv);contOv=null;} $("mini").style.display="none";
+    if(slopeOv){map.removeLayer(slopeOv);slopeOv=null;} if(contOv){map.removeLayer(contOv);contOv=null;} $("mini").style.display="none";
     const minS=+$("minS").value, maxS=+$("maxS").value, roadBufFt=+$("roadBuf").value, minLenFt=+$("minLen").value;
     try{
       const e=areaBox(); square.setBounds(boxBounds(e)); collapse();
@@ -1029,18 +1029,14 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
     finally{ analyzing=false; $("runBtn").disabled=false; }
   };
 
-  // slope + hillshade overlays drawn from the grid
+  // slope overlay drawn from the grid
   function makeShading(zs,slope,haz,n,e,cell){
     const b=boxBounds(e), mk=fn=>{ const c=document.createElement("canvas"); c.width=n; c.height=n; const x=c.getContext("2d"), im=x.createImageData(n,n); fn(im.data); x.putImageData(im,0,0); return L.imageOverlay(c.toDataURL(),b,{opacity:.6}); };
     const minS=+$("minS").value, maxS=+$("maxS").value;
     slopeOv=mk(d=>{ for(let i=0;i<n*n;i++){ const s=slope[i], p=i*4; if(isNaN(zs[i])||s<minS){d[p+3]=0;continue;} const col=s<16?[47,143,78]:s<=maxS?[217,154,18]:[138,26,26]; d[p]=col[0];d[p+1]=col[1];d[p+2]=col[2];d[p+3]=200; } });
-    const az=315*Math.PI/180, alt=45*Math.PI/180;
-    hillOv=mk(d=>{ for(let r=1;r<n-1;r++) for(let c=1;c<n-1;c++){ const i=r*n+c,p=i*4; if(isNaN(zs[i])){d[p+3]=0;continue;}
-      const dzdx=(zs[i+1]-zs[i-1])/(2*cell), dzdy=(zs[i+n]-zs[i-n])/(2*cell), sl=Math.atan(Math.hypot(dzdx,dzdy)), asp=Math.atan2(dzdy,-dzdx);
-      let h=255*(Math.cos(Math.PI/2-alt)*Math.cos(sl)+Math.sin(Math.PI/2-alt)*Math.sin(sl)*Math.cos(az-asp)); h=Math.max(0,Math.min(255,h)); d[p]=d[p+1]=d[p+2]=h; d[p+3]=255; } });
-    hillOv.setOpacity(.45);
     contOv=makeContours(zs,n,e);
-    if($("lySlope").checked) slopeOv.addTo(map); if($("lyHill").checked) hillOv.addTo(map); if($("lyCont5").checked) contOv.addTo(map);
+    if($("lySlope").checked) slopeOv.addTo(map); if($("lyCont5").checked) contOv.addTo(map);
+    if(!contoursUser && !$("lyContours").checked){ $("lyContours").checked=true; contours.addTo(map); }
   }
   function makeContours(zs,n,e){
     const S=3, c=document.createElement("canvas"); c.width=n*S; c.height=n*S; const x=c.getContext("2d");
