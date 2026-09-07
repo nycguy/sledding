@@ -788,9 +788,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <h2>Rules</h2>
     <div class="row"><label for="minS">Ignore slopes gentler than</label><input id="minS" type="range" min="4" max="14" value="7"><span class="val" id="minSv">7°</span></div>
     <div class="row"><label for="maxS">Reject pitches steeper than</label><input id="maxS" type="range" min="20" max="45" value="30"><span class="val" id="maxSv">30°</span></div>
-    <div class="row"><label for="roadBuf">Stay this far from roads</label><input id="roadBuf" type="range" min="50" max="300" step="25" value="125"><span class="val" id="roadBufv">125 ft</span></div>
+    <div class="row"><label for="roadBuf">End of run at least this far from roads</label><input id="roadBuf" type="range" min="5" max="300" step="5" value="10"><span class="val" id="roadBufv">10 ft</span></div>
     <div class="row"><label for="minLen">Minimum course length</label><input id="minLen" type="range" min="100" max="600" step="50" value="200"><span class="val" id="minLenv">200 ft</span></div>
-    <p class="hint">Buildings get a 40 ft buffer, driveways and parking 30 ft, lakes and streams are off limits. Sled physics: friction 0.05 plus air drag. Change a rule, then press Find again.</p>
+    <p class="hint">A course may start right beside a road, and may never cross pavement; the road rule applies to where the sled stops (terrain cells are about 10 ft, so 5–10 ft means "not on the pavement"). Buildings get a 40 ft buffer, driveways and parking 30 ft, lakes and streams are off limits. Sled physics: friction 0.05 plus air drag. Change a rule, then press Find again.</p>
   </section>
 
   <section>
@@ -968,8 +968,8 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
       if(valid<N*0.3) throw new Error("Elevation came back mostly empty for this square. Move the map and try again.");
       status("Building hazard map…",.5); await tick();
       const haz=new Uint8Array(N), R=m=>Math.round(m/cell);
-      const roadM=dilate(roadM0,n,R(roadBufFt/FT)), driveM=dilate(driveM0,n,R(30/FT)), bldgM=dilate(bldgM0,n,R(40/FT)), waterM=dilate(waterM0,n,R(10/FT)), strM=dilate(strM0,n,R(15/FT));
-      for(let i=0;i<N;i++) haz[i]=roadM[i]|driveM[i]|bldgM[i]|waterM[i]|strM[i]|(isNaN(z[i])?1:0);
+      const roadNear=dilate(roadM0,n,R(roadBufFt/FT)), driveM=dilate(driveM0,n,R(30/FT)), bldgM=dilate(bldgM0,n,R(40/FT)), waterM=dilate(waterM0,n,R(10/FT)), strM=dilate(strM0,n,R(15/FT));
+      for(let i=0;i<N;i++) haz[i]=roadM0[i]|driveM[i]|bldgM[i]|waterM[i]|strM[i]|(isNaN(z[i])?1:0);   // pavement itself is always off limits; the road buffer is checked only at the stopping point
       // light smoothing to take the 8-bit steps out of the surface, then slope
       const zs=new Float32Array(N);
       for(let r=0;r<n;r++) for(let c=0;c<n;c++){ let s=0,w=0; for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ const rr=r+dy,cc=c+dx; if(rr<0||rr>=n||cc<0||cc>=n) continue; const v=z[rr*n+cc]; if(isNaN(v)) continue; const ww=(dx||dy)?1:2; s+=v*ww; w+=ww; } zs[r*n+c]=w?s/w:NaN; }
@@ -1000,6 +1000,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
         }
         if(!ok||!stopped) return null;
         const q=at(x,y); if(q) samp.push({x,y,z:q.z,d:len,v:0});
+        if(roadNear[q?q.cell:cells[cells.length-1]]) return null;   // stopping point too close to a road
         let maxPitch=0; for(let k=3;k<samp.length;k++){ const dd=samp[k].d-samp[k-3].d; if(dd>0){ const pp=Math.atan2(samp[k-3].z-samp[k].z,dd)*180/Math.PI; if(pp>maxPitch) maxPitch=pp; } }
         let minR=Infinity; for(let k=4;k<samp.length;k++){ if(samp[k-2].v<3) continue; const a1=Math.atan2(samp[k-2].y-samp[k-4].y,samp[k-2].x-samp[k-4].x), a2=Math.atan2(samp[k].y-samp[k-2].y,samp[k].x-samp[k-2].x);
           let da=Math.abs(a2-a1); if(da>Math.PI) da=2*Math.PI-da; const ds=samp[k].d-samp[k-2].d; if(da>1e-3&&ds>0){ const R=ds/da; if(R<minR) minR=R; } }
@@ -1091,7 +1092,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
     $("stats").innerHTML=[["Top speed",f.vmax.toFixed(0)+" mph"],["Length",f.lenFt.toFixed(0)+" ft"],["Drop",f.dropFt.toFixed(0)+" ft"],
       ["Average grade",f.avg.toFixed(1)+"°"],["Steepest pitch",f.maxPitch.toFixed(0)+"°"],["Score",f.score.toFixed(1)],
       ["Ride time",f.secs.toFixed(0)+" s"],["Tightest turn",isFinite(f.minR)?f.minR.toFixed(0)+" ft radius":"straight"],["Average speed",(f.lenFt/f.secs*0.6818).toFixed(0)+" mph"]].map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join("");
-    const notes=[`The line is a simulated sled with inertia: it can corner no harder than 0.3 g, so turns are as gentle as the speed demands. It stops on its own at the dark dot. The whole line stays ${$("roadBuf").value} ft or more from roadways and clear of driveways, parking, buildings and water.`];
+    const notes=[`The line is a simulated sled with inertia: it can corner no harder than 0.3 g, so turns are as gentle as the speed demands. It stops on its own at the dark dot, at least ${$("roadBuf").value} ft from the nearest road; it never crosses pavement and stays clear of driveways, parking, buildings and water.`];
     notes.push(f.open?"Top sits on county-mapped open space. Public land — tree clearing will not be allowed.":"Top is not on county-mapped open space, so this is probably a private parcel. Turn on Tax parcels to see lot lines, then check the owner with the town assessor.");
     if(f.maxPitch>22) notes.push("Steepest pitch is expert-level; a sled will leave the ground on bumps.");
     $("notes").innerHTML=notes.map(t=>`<li>${t}</li>`).join("");
