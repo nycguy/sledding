@@ -683,7 +683,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   #map{position:fixed;inset:0}
   #panel{position:fixed;left:0;right:0;bottom:0;max-height:84dvh;background:#fff;border-radius:14px 14px 0 0;box-shadow:0 -4px 22px rgba(0,0,0,.22);
     overflow-y:auto;transition:max-height .25s;padding-bottom:env(safe-area-inset-bottom);z-index:1000}
-  #panel.collapsed{max-height:238px;overflow:hidden}
+  #panel.collapsed{max-height:262px;overflow:hidden}
   @media (min-width:900px){ #panel{left:14px;right:auto;width:380px;bottom:14px;border-radius:10px;max-height:calc(100dvh - 28px)} #panel.collapsed{max-height:calc(100dvh - 28px)} .grab{display:none} }
   header{padding:8px 16px 8px;cursor:pointer;border-bottom:1px solid var(--line);-webkit-tap-highlight-color:transparent}
   .grab{width:44px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 8px}
@@ -734,29 +734,23 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <h1>Westchester Sledding Course Finder</h1>
     <p>Center the map on a hill, press Find. The app reads LiDAR terrain, avoids roads, driveways, buildings and water, rides a sled down every line, and ranks courses by speed and length.</p>
   </header>
-
-  <section id="diag">
-    <h2>Connection check</h2>
-    <div id="diagList" style="font-size:13px;line-height:1.7">Checking…</div>
-    <p class="hint">Each source must show OK for Find to work. If one is blocked, tell me which.</p>
-  </section>
-
-  <section>
-    <h2><span class="step">1</span>Pick the study area</h2>
-    <div class="seg" id="sizeSeg"><button data-mi="0.5">½ mile</button><button data-mi="1" class="on">1 mile</button><button data-mi="1.5">1½ mile</button></div>
-    <div class="chips" id="jump"></div>
-    <p class="hint">Drag the map so the dashed square covers the hills you care about, or jump to a park to try it out.</p>
-  </section>
-
-  <section>
-    <h2><span class="step">2</span>Find courses</h2>
-    <button class="btn" id="runBtn">Find sledding courses here</button>
+  <section id="go">
+        <button class="btn" id="runBtn">Find sledding courses here</button>
     <div id="bar"><i></i></div>
     <div id="status">Ready.</div>
   </section>
 
+
+  <section>
+    <h2><span class="step">1</span>Study area (drag the map, then press Find above)</h2>
+    <div class="seg" id="sizeSeg"><button data-mi="0.5">½ mile</button><button data-mi="1" class="on">1 mile</button><button data-mi="1.5">1½ mile</button></div>
+    <div class="chips" id="jump"></div>
+    <p class="hint">The dashed square is what gets analyzed. Drag the map to move it, or jump to a park.</p>
+  </section>
+
+
   <section id="resultsSec" style="display:none">
-    <h2><span class="step">3</span>Ranked courses <span style="font-weight:400;color:var(--ink-2);margin-left:6px" id="count"></span></h2>
+    <h2><span class="step">2</span>Ranked courses <span style="font-weight:400;color:var(--ink-2);margin-left:6px" id="count"></span></h2>
     <div id="list"></div>
     <div id="detail">
       <canvas id="profile"></canvas>
@@ -783,6 +777,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <label class="check"><input type="checkbox" id="lySlope"> Slope shading (after Find)</label>
     <label class="check"><input type="checkbox" id="lyHill"> LiDAR hillshade (after Find)</label>
     <label class="check"><input type="checkbox" id="lyImagery" checked> Aerial imagery basemap</label>
+  </section>
+
+  <section id="diag">
+    <h2>Connection check</h2>
+    <div id="diagList" style="font-size:13px;line-height:1.7">Checking…</div>
+    <p class="hint">Each source must show OK for Find to work. If one is blocked, tell me which.</p>
   </section>
 
   <footer>Elevation: USGS 3DEP LiDAR. Buildings, roadways, driveways, parking, lakes, streams, parcels, open space, contours: Westchester County GIS. Screening tool from bare-earth terrain — walk the hill, confirm the parcel owner, and expect public parkland to prohibit tree clearing.</footer>
@@ -867,7 +867,8 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
   let tilesOk=0,tilesBad=0; const tileRow=()=>`${tilesOk?"✅":tilesBad?"❌":"⏳"} Basemap tiles: ${tilesOk} loaded, ${tilesBad} failed`;
   imagery.on("tileload",()=>{tilesOk++;showDiag();}); imagery.on("tileerror",()=>{tilesBad++;showDiag();});
   const diag={county:"⏳ Westchester County GIS: checking…",usgs:"⏳ USGS elevation: checking…"};
-  function showDiag(){ $("diagList").innerHTML=[tileRow(),diag.county,diag.usgs].join("<br>"); }
+  function showDiag(){ const allOk=tilesOk>0&&diag.county.startsWith("✅")&&diag.usgs.startsWith("✅");
+    $("diagList").innerHTML=allOk?"✅ Connected to basemap, county GIS and USGS elevation.":[tileRow(),diag.county,diag.usgs].join("<br>"); }
   showDiag();
   (async function selfCheck(){
     const tinyBox="-8210000,5035000,-8209000,5036000";
@@ -1005,7 +1006,7 @@ window.addEventListener("unhandledrejection",function(e){var b=document.getEleme
       <div class="name">Course ${f.rank}${f.open?" (parkland)":""}</div><div class="speed">${f.vmax.toFixed(0)} mph</div>
       <div class="sub">${f.lenFt.toFixed(0)} ft long, ${f.dropFt.toFixed(0)} ft drop, ${f.avg.toFixed(0)}° average, ${f.maxPitch.toFixed(0)}° steepest</div></div>`).join("");
     $("list").querySelectorAll(".course").forEach(el=>el.onclick=()=>select(+el.dataset.r));
-    if(courses.length){ map.fitBounds(L.featureGroup(courses.map(f=>f.line)).getBounds().pad(.15)); }
+    if(courses.length){ map.fitBounds(L.featureGroup(courses.map(f=>f.line)).getBounds().pad(.15)); expand(); setTimeout(()=>$("resultsSec").scrollIntoView({block:"start",behavior:"smooth"}),300); }
   }
   function select(rank){
     const f=courses.find(c=>c.rank===rank); if(!f) return; expand();
