@@ -360,12 +360,14 @@ def clean_poly(g):
         return max(g.geoms,key=lambda p:p.area)
     return None
 
-def building_records(building_fc, streets_projected, z, transform, origin, zmin):
+def building_records(building_fc, streets_projected, z, transform, origin, zmin, world_rect, chase_residential_area):
     street_union=unary_union(streets_projected)
     records=[]
     project=lambda gg: project_geom(gg)
     for i,f in enumerate(building_fc["features"]):
-        g=clean_poly(project(geom_from_feature(f)))
+        srcg=geom_from_feature(f)
+        if srcg is None: continue
+        g=clean_poly(project(srcg).intersection(world_rect))
         if g is None or g.area<8: continue
         p=f.get("properties") or {}
         source_id=p.get("OBJECTID",i+1)
@@ -377,6 +379,8 @@ def building_records(building_fc, streets_projected, z, transform, origin, zmin)
         road_dist=centroid.distance(near)
         confidence="high" if road_dist<=45 else ("medium" if road_dist<=75 else "low")
         variant=deterministic_variant(source_id,g)
+        is_chase_residential=bool(chase_residential_area.covers(centroid) and g.area<=900)
+        building_role="chase_residential" if is_chase_residential else "context"
         ring=[]
         for x,y in list(g.exterior.coords)[:-1]:
             lx,ly,lz=local_xzy(x,y,med,origin,zmin)
@@ -397,8 +401,9 @@ def building_records(building_fc, streets_projected, z, transform, origin, zmin)
                 "maxElevationM":round(gmax,3),
                 "reliefM":round(gmax-gmin,3),
             },
+            "buildingRole":building_role,
             "architecture":{
-                "type":"Center Hall Colonial",
+                "type":"Center Hall Colonial" if is_chase_residential else "Context/Public Proxy",
                 "stories":2,
                 "storyHeightM":3.05,
                 "wallHeightM":6.10,
@@ -418,8 +423,13 @@ def building_records(building_fc, streets_projected, z, transform, origin, zmin)
         }
         records.append((rec,g))
     records.sort(key=lambda rg:(rg[0]["centroidLocalStuds"]["z"],rg[0]["centroidLocalStuds"]["x"]))
+    residential_index=0
     for idx,(rec,g) in enumerate(records):
-        rec["architecture"]["variantIndex"]=idx%12
+        if rec["buildingRole"]=="chase_residential":
+            rec["architecture"]["variantIndex"]=residential_index%12
+            residential_index+=1
+        else:
+            rec["architecture"]["variantIndex"]=0
     return records
 
 def write_obj_buildings(records_geoms, zmin, origin):
@@ -475,8 +485,8 @@ def write_obj_buildings(records_geoms, zmin, origin):
             cx,cy=g.centroid.x,g.centroid.y
             L=max(rec["architecture"]["mainLengthM"]/2,2)
             W=max(rec["architecture"]["mainWidthM"]/2,2)
-            pitch=math.radians(34 + (rec["architecture"]["seed"]%5))
-            rise=min(W*math.tan(pitch),4.0)*STUDS_PER_M
+            pitch=math.radians((34 + (rec["architecture"]["seed"]%5)) if rec.get("buildingRole")=="chase_residential" else 18)
+            rise=min(W*math.tan(pitch),4.0 if rec.get("buildingRole")=="chase_residential" else 2.0)*STUDS_PER_M
             roofpts=[]
             for du,dv in [(-L,-W),(L,-W),(L,W),(-L,W),(-L,0),(L,0)]:
                 x=cx+du*ux+dv*vx; y=cy+du*uy+dv*vy
@@ -775,13 +785,16 @@ def main():
 
     log("6. Generating Center Hall Colonial building records...")
     building_fc=raw_safe["buildings"]
-    records_geoms=building_records(building_fc,street_geoms,z,transform,origin,zmin)
+    chase_residential_area=unary_union(chase_parts)
+    records_geoms=building_records(building_fc,street_geoms,z,transform,origin,zmin,world_rect,chase_residential_area)
     records=[r for r,g in records_geoms]
     (OUT/"chasewild_building_records.json").write_text(json.dumps({
       "generatorVersion":"0.1","architecture":"Center Hall Colonial",
       "recordCount":len(records),"records":records
     },indent=2))
-    log("Buildings",len(records))
+    chase_res_count=sum(1 for r in records if r["buildingRole"]=="chase_residential")
+    context_building_count=len(records)-chase_res_count
+    log("Buildings",len(records),"Chase residential",chase_res_count,"context",context_building_count)
 
     # Create semantic region in local studs.
     def local_ring(poly):
@@ -869,9 +882,9 @@ def main():
         add("CHASE-STREETS","UNVERIFIED",f"{7-len(missing)}/7 named County centerlines found; unresolved: {missing}")
     add("LEONARD-PARK","PASS" if world_tol.contains(leonard_proj) else "FAIL",f"complete selected open-space polygon area {leonard_proj.area/10000:.2f} ha inside world")
     add("LIDAR-COVERAGE","PASS",f"{width}x{height} native 1 m cells; {len(tile_meta)} source DTM tiles")
-    add("BUILDINGS","PASS" if len(records)>0 else "FAIL",f"{len(records)} footprint-derived records, no address/owner fields")
-    variants=sorted(set(r["architecture"]["variantIndex"] for r in records))
-    add("COLONIAL-VARIANTS","PASS" if len(variants)>=12 else "WARN",f"{len(variants)} deterministic Center Hall Colonial variants represented")
+    add("BUILDINGS","PASS" if len(records)==vector_counts.get("buildings") else "FAIL",f"{len(records)} in-world footprint-derived records ({chase_res_count} Chase residential, {context_building_count} context), no address/owner fields")
+    variants=sorted(set(r["architecture"]["variantIndex"] for r in records if r["buildingRole"]=="chase_residential"))
+    add("COLONIAL-VARIANTS","PASS" if len(variants)>=12 else "WARN",f"{len(variants)} deterministic Center Hall Colonial variants represented across {chase_res_count} Chase residential buildings")
     add("PLANIMETRICS","PASS",", ".join(f"{k}={vector_counts[k]}" for k in ("roadways","driveways","sidewalks","parking_lots","streams","lakes")))
     add("COURSE-IN-WORLD","PASS" if route_in_world else "UNVERIFIED","source route GeoJSON reprojected into world" if route_in_world else "route source not available")
     add("ORTHO-2025","PASS" if ortho else "WARN","4-band RGB+NIR export and derived vegetation index" if ortho else "orthophoto export unavailable in CI")
@@ -918,7 +931,9 @@ def main():
       },
       "featureCounts":vector_counts,
       "buildingCount":len(records),
-      "buildingArchitecture":"two-story Center Hall Colonial procedural/proxy massing; exact private facades excluded",
+      "chaseResidentialBuildingCount":chase_res_count,
+      "contextBuildingCount":context_building_count,
+      "buildingArchitecture":"Chase residential: two-story Center Hall Colonial procedural/proxy massing; other in-world structures: generalized context/public proxy; exact private facades excluded",
       "ortho":ortho,
       "privacy":{
         "ownerFieldsExported":False,"addressFieldsExported":False,"houseNumbersExported":False,
@@ -933,7 +948,7 @@ def main():
       f"- World extent: **{width} m × {height} m** = **{width*4:.0f} × {height*4:.0f} studs**",
       f"- Native terrain: **{width} × {height} 1 m LiDAR-derived cells**",
       f"- Elevation range: **{dtm['zmin']:.2f}–{dtm['zmax']:.2f} m**",
-      f"- Buildings: **{len(records)}** source-footprint Center Hall Colonial proxy records",
+      f"- Buildings: **{len(records)}** source-footprint records: **{chase_res_count} Chase residential Center Hall Colonial proxies** + **{context_building_count} context/public proxies**",
       f"- Leonard Park open-space area represented: **{leonard_proj.area/10000:.2f} ha**",
       "",
       "## GIS feature counts",
