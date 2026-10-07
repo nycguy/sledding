@@ -646,9 +646,30 @@ def main():
         if nm in targets:
             selected.append(f); found[nm]+=1
     missing=[targets[k] for k in targets if not found[k]]
+    fallback_street_points=[]
+    fallback_sources=[]
     if missing:
-        log("Nearby street names:", sorted(nearby_names))
-        raise RuntimeError(f"Missing Chase street geometries: {missing}")
+        log("County Streets layer missing named centerline(s):",missing)
+        for missing_name in missing:
+            # Public geocoder is used only as an AOI inclusion fallback. It does
+            # not replace County planimetric roadway geometry and is tagged inferred.
+            params={
+              "SingleLine":f"{missing_name}, Mount Kisco, NY 10549",
+              "f":"json","outSR":"4326","maxLocations":1,
+            }
+            try:
+                gj=request_json("https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates",params)
+                cand=(gj.get("candidates") or [None])[0]
+                if cand and float(cand.get("score",0))>=75:
+                    loc=cand["location"]
+                    pg=project_geom(Point(float(loc["x"]),float(loc["y"])))
+                    fallback_street_points.append(pg)
+                    fallback_sources.append({"name":missing_name,"score":cand.get("score"),"matchedAddress":cand.get("address"),"source":"ArcGIS World Geocoder AOI fallback"})
+                    log("Fallback street point",missing_name,cand.get("score"),cand.get("address"),loc)
+                else:
+                    log("No reliable fallback geocode for",missing_name,cand)
+            except Exception as exc:
+                log("Fallback geocode failed",missing_name,repr(exc))
     street_geoms_wgs=[geom_from_feature(f) for f in selected if geom_from_feature(f)]
     street_geoms=[project_geom(g) for g in street_geoms_wgs]
     streets_union=unary_union(street_geoms)
@@ -673,7 +694,13 @@ def main():
     log("Leonard polygon area ha",leonard_proj.area/10000)
 
     # Spec AOI rule: 100 m street cluster, union complete Leonard Park, then 50 m context.
-    required=unary_union([streets_union.buffer(100),leonard_proj])
+    chase_parts=[streets_union.buffer(100)]
+    # The County Streets layer currently omits Rolling Ridge Court by name.
+    # Include any reliably geocoded missing street location with a conservative
+    # 175 m AOI buffer; actual rendered road geometry still comes from County
+    # Roadways polygons.
+    chase_parts.extend(p.buffer(175) for p in fallback_street_points)
+    required=unary_union(chase_parts+[leonard_proj])
     world_shape=required.buffer(50)
     bounds=pad_bounds(world_shape.bounds)
     world_rect=box(*bounds)
@@ -832,7 +859,12 @@ def main():
     validations=[]
     def add(name,status,detail):
         validations.append({"name":name,"status":status,"detail":detail})
-    add("CHASE-STREETS","PASS" if not missing else "FAIL",f"7/7 named streets found; {len(selected)} source segments")
+    if not missing:
+        add("CHASE-STREETS","PASS",f"7/7 named County street centerlines found; {len(selected)} source segments")
+    elif len(fallback_street_points)==len(missing):
+        add("CHASE-STREETS","WARN",f"{7-len(missing)}/7 named County centerlines found; {', '.join(missing)} included in AOI using public geocoder fallback and rendered from County Roadways polygons")
+    else:
+        add("CHASE-STREETS","UNVERIFIED",f"{7-len(missing)}/7 named County centerlines found; unresolved: {missing}")
     add("LEONARD-PARK","PASS" if world_tol.contains(leonard_proj) else "FAIL",f"complete selected open-space polygon area {leonard_proj.area/10000:.2f} ha inside world")
     add("LIDAR-COVERAGE","PASS",f"{width}x{height} native 1 m cells; {len(tile_meta)} source DTM tiles")
     add("BUILDINGS","PASS" if len(records)>0 else "FAIL",f"{len(records)} footprint-derived records, no address/owner fields")
@@ -873,6 +905,8 @@ def main():
       "aoiRule":{
         "chaseStreetBufferM":100,"combinedContextBufferM":50,"rasterPadMultipleM":PAD_MULTIPLE_M,
         "streets":TARGET_STREETS,
+        "countyStreetCenterlinesMissing":missing,
+        "fallbackStreetLocations":fallback_sources,
         "leonardParkSource":"Westchester County DataHub Environment and Planning / Open Space layer 209",
       },
       "gisSources":{
