@@ -453,8 +453,8 @@ def write_obj_buildings(records_geoms, zmin, origin):
             fh.write(f"usemtl facade_{mat_idx}\n")
             n=len(ext)
             for j in range(n):
-                a=vcount+j+1; b=vcount+(j+1)%n+1
-                c=vcount+n+(j+1)%n+1; d=vcount+n+j+1
+                a=wall_start+j+1; b=wall_start+(j+1)%n+1
+                c=wall_start+n+(j+1)%n+1; d=wall_start+n+j+1
                 fh.write(f"f {a} {b} {c} {d}\n")
             # Flat cap under proxy roof to close the mass.
             try:
@@ -491,14 +491,6 @@ def write_obj_buildings(records_geoms, zmin, origin):
             fh.write(f"f {idx[0]} {idx[4]} {idx[3]}\n")
             fh.write(f"f {idx[1]} {idx[2]} {idx[5]}\n")
             vcount+=6
-            # Account for original wall verts after roof/cap writes.
-            # Wall vertices were emitted before triangulation; adjust only once here.
-            # We cannot retroactively change indexes, so keep separate counter carefully.
-            # The wall vertices are at the beginning of this object's emission.
-            # Add them after faces were written.
-            # NOTE: their count was not included above.
-            # To keep subsequent indexes correct, add now.
-            vcount += 2*n
     return obj,mtl
 
 def _iter_polys(g):
