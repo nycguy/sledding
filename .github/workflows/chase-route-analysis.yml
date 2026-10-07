@@ -8,6 +8,7 @@ on:
       - "scripts/chase_roblox_route_analysis.py"
       - "scripts/export_chasewild_roblox_m0.py"
       - "scripts/inspect_chase_lidar.py"
+      - "scripts/export_chasewild_native_lidar_dtm.py"
       - ".github/workflows/chase-route-analysis.yml"
   workflow_dispatch:
 
@@ -24,13 +25,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install --disable-pip-version-check numpy pillow requests
+        run: python -m pip install --disable-pip-version-check numpy pillow requests rasterio pyproj
       - name: Run Chase / Leonard Park terrain analysis
         run: python scripts/chase_roblox_route_analysis.py
       - name: Inspect source LiDAR products
         run: python scripts/inspect_chase_lidar.py
       - name: Export Chase Wild Roblox M0 terrain inputs
         run: python scripts/export_chasewild_roblox_m0.py
+      - name: Export native lidar-derived Chase Wild terrain
+        run: python scripts/export_chasewild_native_lidar_dtm.py
       - name: Upload analysis outputs
         uses: actions/upload-artifact@v4
         with:
