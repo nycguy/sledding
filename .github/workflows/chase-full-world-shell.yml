@@ -1,0 +1,35 @@
+name: Chase Full GIS World Shell
+
+on:
+  push:
+    branches:
+      - analysis/roblox-sled-route
+    paths:
+      - "scripts/build_chasewild_full_world_shell.py"
+      - ".github/workflows/chase-full-world-shell.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  world-shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install GIS dependencies
+        run: python -m pip install --disable-pip-version-check numpy pillow requests rasterio pyproj shapely
+      - name: Build route evidence
+        run: python scripts/chase_roblox_route_analysis.py
+      - name: Build full GIS world shell
+        run: python scripts/build_chasewild_full_world_shell.py
+      - name: Upload world shell
+        uses: actions/upload-artifact@v4
+        with:
+          name: chasewild-full-gis-world-shell
+          path: analysis-output/world-shell/
+          if-no-files-found: error
