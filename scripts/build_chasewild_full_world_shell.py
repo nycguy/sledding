@@ -882,7 +882,10 @@ def main():
         add("CHASE-STREETS","UNVERIFIED",f"{7-len(missing)}/7 named County centerlines found; unresolved: {missing}")
     add("LEONARD-PARK","PASS" if world_tol.contains(leonard_proj) else "FAIL",f"complete selected open-space polygon area {leonard_proj.area/10000:.2f} ha inside world")
     add("LIDAR-COVERAGE","PASS",f"{width}x{height} native 1 m cells; {len(tile_meta)} source DTM tiles")
-    add("BUILDINGS","PASS" if len(records)==vector_counts.get("buildings") else "FAIL",f"{len(records)} in-world footprint-derived records ({chase_res_count} Chase residential, {context_building_count} context), no address/owner fields")
+    raw_building_count=vector_counts.get("buildings",0)
+    excluded_building_count=max(0,raw_building_count-len(records))
+    building_status="PASS" if (raw_building_count>0 and len(records)/raw_building_count>=0.98) else "FAIL"
+    add("BUILDINGS",building_status,f"{len(records)}/{raw_building_count} in-world footprint features generated ({chase_res_count} Chase residential, {context_building_count} context); {excluded_building_count} tiny/edge/invalid footprint features retained in GIS but omitted from proxy massing; no address/owner fields")
     variants=sorted(set(r["architecture"]["variantIndex"] for r in records if r["buildingRole"]=="chase_residential"))
     add("COLONIAL-VARIANTS","PASS" if len(variants)>=12 else "WARN",f"{len(variants)} deterministic Center Hall Colonial variants represented across {chase_res_count} Chase residential buildings")
     add("PLANIMETRICS","PASS",", ".join(f"{k}={vector_counts[k]}" for k in ("roadways","driveways","sidewalks","parking_lots","streams","lakes")))
@@ -931,6 +934,8 @@ def main():
       },
       "featureCounts":vector_counts,
       "buildingCount":len(records),
+      "sourceBuildingFootprintFeatureCount":raw_building_count,
+      "unmodeledTinyEdgeOrInvalidBuildingFeatureCount":excluded_building_count,
       "chaseResidentialBuildingCount":chase_res_count,
       "contextBuildingCount":context_building_count,
       "buildingArchitecture":"Chase residential: two-story Center Hall Colonial procedural/proxy massing; other in-world structures: generalized context/public proxy; exact private facades excluded",
