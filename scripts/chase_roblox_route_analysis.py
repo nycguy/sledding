@@ -355,6 +355,9 @@ def analyze():
     })
     ext_summ=[]
     for i,(score,f,nearft,extra_drop) in enumerate(ext_keep,1):
+        f["coords"]=[point_ll(p[0],p[1]) for p in f["samp"]]
+        f["startLonLat"]=f["coords"][0]
+        f["endLonLat"]=f["coords"][-1]
         add_line(f"Wooded extension candidate {i}",f["coords"],{
             "kind":"wooded_extension_candidate","candidate":i,
             "speed_mph":round(f["vmax"],1),"length_ft":round(f["lenFt"]),
