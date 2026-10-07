@@ -448,7 +448,9 @@ def write_obj_buildings(records_geoms, zmin, origin):
             for x,y in ext:
                 verts.append(((x-origin[0])*STUDS_PER_M,top,-(y-origin[1])*STUDS_PER_M))
             fh.write(f"o {rec['id']}\n")
+            wall_start=vcount
             for x,y,zv in verts: fh.write(f"v {x:.3f} {y:.3f} {zv:.3f}\n")
+            vcount += len(verts)
             mat_idx=["white_clapboard","warm_gray_clapboard","cream_clapboard","brick_accent","stone_accent","muted_blue_clapboard"].index(rec["architecture"]["facadeFamily"])
             fh.write(f"usemtl facade_{mat_idx}\n")
             n=len(ext)
