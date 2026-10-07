@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw
 
 WC = "https://giswww.westchestergov.com/arcgis/rest/services"
 PLAN = WC + "/DataHub_BasemapPlanimetrics/MapServer"
@@ -393,6 +393,39 @@ def analyze():
         ]
     }
     (OUT/"summary.json").write_text(json.dumps(summary,indent=2))
+    # 2025 Westchester aerial image with the selected route screening lines.
+    try:
+        aerial_url = WC + "/MappingWestchesterCounty_AerialPhoto2025/ImageServer/exportImage"
+        aerial = get_png(aerial_url, {
+            "bbox":f'{ext["xmin"]},{ext["ymin"]},{ext["xmax"]},{ext["ymax"]}',
+            "bboxSR":"3857","imageSR":"3857","size":"1400,1400",
+            "format":"jpgpng","f":"image"
+        }, (1400,1400))
+        img=Image.fromarray(aerial, "RGBA").convert("RGB")
+        draw=ImageDraw.Draw(img)
+        def pix(ll):
+            lon,lat=ll
+            mx,my=merc(lon,lat)
+            x=(mx-ext["xmin"])/(ext["xmax"]-ext["xmin"])*1400
+            y=(ext["ymax"]-my)/(ext["ymax"]-ext["ymin"])*1400
+            return (x,y)
+        for ff in keep:
+            pts=[pix(q) for q in ff["coords"]]
+            if len(pts)>1: draw.line(pts, fill=(110,150,205), width=3)
+        ap=[pix(q) for q in anchor["coords"]]
+        if len(ap)>1: draw.line(ap, fill=(35,92,175), width=8)
+        for i,(score,ff,nearft,extra_drop) in enumerate(ext_keep,1):
+            pts=[pix(q) for q in ff["coords"]]
+            if len(pts)>1: draw.line(pts, fill=(235,147,35), width=8)
+            x,y=pts[0]
+            draw.ellipse((x-8,y-8,x+8,y+8),fill=(235,147,35),outline=(255,255,255),width=2)
+            draw.text((x+12,y-10),f"WOOD {i}",fill=(255,255,255),stroke_width=2,stroke_fill=(0,0,0))
+        x,y=ap[0]
+        draw.ellipse((x-8,y-8,x+8,y+8),fill=(35,92,175),outline=(255,255,255),width=2)
+        draw.text((x+12,y-10),"OPEN HILL",fill=(255,255,255),stroke_width=2,stroke_fill=(0,0,0))
+        img.save(OUT/"route_overlay_2025_aerial.jpg",quality=92)
+    except Exception as exc:
+        print("Aerial overlay warning:",repr(exc))
     md=["# Chase → Leonard Park Roblox sled-route screening","",
         "This reruns the Fall Line terrain model against USGS 3DEP elevation and Westchester County hazard layers, then finds higher east-side runs that approach the open-hill anchor represented by the screenshot's Course #4 metrics.","",
         "## Open-hill anchor",
